@@ -1,40 +1,49 @@
 marker:
   colors:
-    - [172, 157, 147]
-    - [199, 184, 164]
-    - [147, 155, 144]
-    - [180, 166, 169]
-    - [158, 170, 177]
-  
-  keys: [Key_1, Key_2, Key_3, Key_4, Key_5]
-  
+  - - 172
+    - 157
+    - 147
+  - - 199
+    - 184
+    - 164
+  - - 147
+    - 155
+    - 144
+  - - 180
+    - 166
+    - 169
+  - - 158
+    - 170
+    - 177
+  keys:
+  - Key_1
+  - Key_2
+  - Key_3
+  - Key_4
+  - Key_5
   pairing:
     enabled: true
     rules:
-      "1": "4"
-
+      '1': '4'
 playback:
   fps: 119.88
   video_fps_original: 119.88
   large_step_multiplier: 6
   frame_step: 1
-  
-  # frame compensation for float inaccuracy
   frame_compensation:
     119.88: 3
     120: 3
     60: 2
     30: 1
     24: 1
-
 timeline:
-  marker_offset: [5, 15]  # start offset, end reduction
-
+  marker_offset:
+  - 5
+  - 15
 ui:
-  window_title: "Event Marker (Djalø)"
+  window_title: "Event Marker (t\u0255i\u032Fal\xF8)"
   marker_float_enabled: true
   csv_plot_enabled: true
-  
 workspace:
-  default_path: "P:\\projects\\monkeys\\Chronic_VLL\\DATA\\Pici"
+  default_path: P:\projects\monkeys\Chronic_VLL\DATA\Pici
   auto_search_events: true

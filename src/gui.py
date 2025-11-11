@@ -33,28 +33,21 @@ import ast
 import glob
 import platform
 import subprocess
-from pathlib import Path
-from collections import defaultdict
-from functools import partial
-from typing import Optional, Any
 import logging
-
-import numpy as np
-import csv
-import yaml
+from bisect import bisect_right
+from pathlib import Path
 
 from PyQt6.QtCore import (
     Qt, QUrl, QTime, QTimer, QEvent, QRectF, QPointF,
     QSettings, QSize, QPoint, pyqtSignal
 )
-from PyQt6.QtGui import QAction, QKeyEvent, QPainter, QColor, QTransform, QFont
+from PyQt6.QtGui import QAction, QKeyEvent, QPainter, QColor, QTransform, QFont, QGuiApplication
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSlider, QPushButton, QLabel, QLineEdit, QFileDialog,
-    QSizePolicy, QMenu, QComboBox
+    QSizePolicy, QMenu, QComboBox, QDialog
 )
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
-from PyQt6.QtMultimediaWidgets import QVideoWidget
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QVideoFrame
 
 from marker_float import MarkerFloat
 from event_manager import EventManager
@@ -62,14 +55,20 @@ from key_handler import KeyHandler
 from cfg import config
 from playback_controller import PlaybackController
 from csv_window import CSVPlotWindow
+from csv_analysis_window import CSVAnalysisWindow
 from qivideo_widget import QIVideoWidget
 from markers_widget import MarkersWidget
+from cfg_window import ConfigWindow
+from ol_logging import set_colored_logger
+
+lg = set_colored_logger(__name__)
+lg.setLevel(logging.DEBUG)
 
 class VideoPlayer(QMainWindow):
     """Main application window, coordinates all other components."""
     marker_signal = pyqtSignal(str)
 
-    def __init__(self):
+    def __init__(self, app: QApplication):
         super().__init__()
         self.setWindowTitle(config.WINDOW_TITLE)
         self.setGeometry(100, 100, 1420, 750)
@@ -90,16 +89,21 @@ class VideoPlayer(QMainWindow):
         self.markers_widget = MarkersWidget(self)
         self.csv_plot_win = None
         self.frame_timer = QTimer()
-
-        # float marker window
         self.marker_float = None
         if config.MARKER_FLOAT_ENABLED:
             self.marker_float = MarkerFloat()
+        self.config_win = None
 
         self.is_slider_pressed = False
         self.frame_editing = False
         self.save_status = True
         self.fname = None
+
+        # frame updater
+        self._sorted_marker_events: list[tuple[int, str]] = []
+        self._sorted_marker_frames: list[int] = [] # [frame] ascending, for bisect
+        self._scan_idx: int = 0
+        self._last_frame: int = 0
 
         self.init_ui()
         self.connect_signals()
@@ -112,8 +116,14 @@ class VideoPlayer(QMainWindow):
         # setup csv plot window if enabled
         if config.CSV_PLOT_ENABLED:
             self.csv_plot_win = CSVPlotWindow(self)
-            self.csv_plot_win.move(self.x() + 20, self.y() + self.height() - 170)
             self.csv_plot_win.show()
+        
+        # show marker float if enabled
+        if self.marker_float:
+            self.marker_float.show()
+            self.marker_float.raise_()
+        
+        self._set_float_window_pos()
         
         app.installEventFilter(self)
 
@@ -190,10 +200,6 @@ class VideoPlayer(QMainWindow):
         layout.addLayout(control_layout)
         self.init_menubar()
 
-        # show marker float if enabled
-        if self.marker_float:
-            self.marker_float.show()
-
     def init_menubar(self):
         menubar = self.menuBar()
         
@@ -234,6 +240,18 @@ class VideoPlayer(QMainWindow):
         csv_plot_action.triggered.connect(self.toggle_csv_plot)
         workspace_menu.addAction(csv_plot_action)
         self.csv_plot_action = csv_plot_action
+
+        # 
+        csv_analysis_action = QAction("CSV Analysis & Peaks", self)
+        csv_analysis_action.triggered.connect(self.open_csv_analysis)
+        workspace_menu.addAction(csv_analysis_action)
+
+        # settings
+        settings_menu = menubar.addMenu("Settings")
+        edit_cfg_action = QAction("Edit Config...", self)
+        # edit_cfg_action.setEnabled(False)   # .. until implemented
+        edit_cfg_action.triggered.connect(self.open_config_window)
+        settings_menu.addAction(edit_cfg_action)
 
     def connect_signals(self):
         # playback signals
@@ -282,6 +300,15 @@ class VideoPlayer(QMainWindow):
         self.frame_label.setText(f"Frame: {frame}")
         self.update_current_marker_label(frame)
 
+        # emit MarkerFloat events (not when scrubbing/paused)
+        if self.media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState and not self.is_slider_pressed:
+            self.consume_passed_markers(frame)
+        else:
+            # keep pointer in sync quietly while scrubbing/paused
+            if self._sorted_marker_frames:
+                self._scan_idx = bisect_right(self._sorted_marker_frames, frame)
+            self._last_frame = frame
+
     def update_duration(self, duration):
         self.time_slider.setRange(0, duration)
 
@@ -289,6 +316,12 @@ class VideoPlayer(QMainWindow):
         self.key_handler.handle_key_press(event)
     
     def eventFilter(self, obj, event):
+        # don't intercept keys when CSV analysis window is active and focused
+        if hasattr(self, 'csv_analysis_win') and self.csv_analysis_win and self.csv_analysis_win.isVisible():
+            focused_widget = QApplication.focusWidget()
+            if focused_widget and focused_widget.window() == self.csv_analysis_win:
+                return False
+        
         if event.type() == QEvent.Type.KeyPress and not self.frame_editing:
             self.keyPressEvent(event)
             return True
@@ -296,19 +329,29 @@ class VideoPlayer(QMainWindow):
 
     def closeEvent(self, event):
         self.media_player.stop()
-        print("Recorded Events:", dict(self.event_manager.markers))
+        lg.info("Recorded Events:", dict(self.event_manager.markers))
         self.save_event()
         
         self.settings.setValue("window/size", self.size())
         self.settings.setValue("window/pos", self.pos())
         self.settings.sync()
         
-        # close child windows
+        # save and close child win
+        if self.csv_plot_win and self.csv_plot_win.isVisible():
+            self.settings.setValue("csv_window/pos", self.csv_plot_win.pos())
+            self.settings.setValue("csv_window/size", self.csv_plot_win.size())
+            self.csv_plot_win.close()
+
+        if self.marker_float and self.marker_float.isVisible():
+            self.settings.setValue("marker_float/pos", self.marker_float.pos())
+            self.settings.setValue("marker_float/size", self.marker_float.size())
+            self.marker_float.close()
+        
         if self.csv_plot_win:
             self.csv_plot_win.close()
         if self.marker_float:
             self.marker_float.close()
-        
+
         super().closeEvent(event)
 
     def slider_pressed(self):
@@ -340,6 +383,8 @@ class VideoPlayer(QMainWindow):
         self.play_btn.setEnabled(True)
         self.settings.setValue('Path/last_vid_path', os.path.dirname(file_path))
 
+        self._rebuild_marker_scan()
+
         if config.AUTO_SEARCH_EVENTS:
             self.load_events_silent()
 
@@ -360,10 +405,11 @@ class VideoPlayer(QMainWindow):
                 self.event_manager.clear()
                 self.event_manager.markers.update({k: sorted(v) for k, v in data.items()})
                 self.markers_widget.update()
+                self._rebuild_marker_scan()
                 self.save_status = True
-                print(f"Loaded events from {file_name}")
+                lg.info(f"Loaded events from {file_name}")
         except Exception as e:
-            print(f"Error loading event file: {e}")
+            lg.error(f"Error loading event file: {e}")
 
     def load_events_silent(self):
         """called upon new video opens, search for event in evt_dir folder"""
@@ -380,26 +426,26 @@ class VideoPlayer(QMainWindow):
         if not m:
             return
         vid_base = m.group()
-        print(f'Matched task format {vid_base}')
+        lg.debug(f'Matched task format {vid_base}')
         
         for f in txts:
             if vid_base in os.path.basename(f):
-                print(f'Auto load event {f}')
+                lg.info(f'Auto load event {f}')
                 self._read_event_file(f)
                 return
 
     def save_event(self):
         if not any(self.event_manager.markers.values()):
-            print("Nothing to save.")
+            lg.info("Nothing to save.")
             return
 
         if not self.fname:
-            print("Cannot save, no video file is loaded.")
+            lg.warning("Cannot save, no video file is loaded.")
             return
 
         # check if content changed
         if self.save_status and len(self.event_manager.undo_stack) + len(self.event_manager.redo_stack) == 0:
-            print("Nothing new to save.")
+            lg.info("Nothing new to save.")
             return
 
         try:
@@ -414,31 +460,39 @@ class VideoPlayer(QMainWindow):
             )
             os.makedirs(base_path, exist_ok=True)
 
-            file_path = os.path.join(base_path, f'event-{fnm}.txt')
+            file_path = os.path.join(base_path, f'event-{fnm}')
             
             # check if file exists with same content
-            if os.path.exists(file_path):
+            while os.path.exists(file_path+'.txt'):
                 try:
-                    with open(file_path, 'r') as f:
+                    with open(file_path+'.txt', 'r') as f:
                         existing_data = ast.literal_eval(f.read())
                     if existing_data == dict(self.event_manager.markers):
-                        print(f'Events unchanged, not saving to {file_path}')
+                        lg.debug(f'Events unchanged, not saving to {file_path}')
                         self.save_status = True
                         self.event_manager.undo_stack.clear()
                         self.event_manager.redo_stack.clear()
                         return
+                    else:
+                        file_path += '(new)'
                 except:
-                    pass  # if can't read, just overwrite
+                    break  # if can't read, just overwrite
             
+            file_path += '.txt'
             # save the file
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(str(dict(self.event_manager.markers)))
 
-            print(f'Successfully saved events to {file_path}')
+            lg.info(f'Successfully saved events to {file_path}')
             self.save_status = True
             self.event_manager.undo_stack.clear()
             self.event_manager.redo_stack.clear()
 
+        except Exception as e:
+            lg.error(f'Error when saving events; please copy data manually!!\n{e}')
+            lg.error("Recorded Events:", dict(self.event_manager.markers))
+
+        try:
             # open file in system viewer
             if platform.system() == 'Windows':
                 os.startfile(file_path)
@@ -446,18 +500,16 @@ class VideoPlayer(QMainWindow):
                 subprocess.call(['open', file_path])
             else:
                 subprocess.call(['xdg-open', file_path])
-
-        except Exception as e:
-            print(f'Error when saving events; please copy data manually!!\n{e}')
-            print("Recorded Events:", dict(self.event_manager.markers))
+        except OSError as e:
+            lg.warning(f'Failed to open saved event txt: {e}')        
 
     def save_event_as(self):
         if not any(self.event_manager.markers.values()):
-            print('Nothing to save.')
+            lg.info('Nothing to save.')
             return
 
         if not self.fname:
-            print("Cannot save, no video file is loaded.")
+            lg.warning("Cannot save, no video file is loaded.")
             return
 
         # default filename
@@ -476,15 +528,15 @@ class VideoPlayer(QMainWindow):
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(str(dict(self.event_manager.markers)))
 
-                print(f'Successfully saved events to {file_path}')
+                lg.info(f'Successfully saved events to {file_path}')
                 
                 # update evt_save_path when user saves to a new location
                 self.settings.setValue('Path/evt_save_path', os.path.dirname(file_path))
                 self.save_status = True
 
             except Exception as e:
-                print(f'Error when saving events as new file; please copy data manually!!\n{e}')
-                print("Recorded Events:", dict(self.event_manager.markers))
+                lg.warning(f'Error when saving events as new file; please copy data manually!!\n{e}')
+                lg.warning("Recorded Events:", dict(self.event_manager.markers))
 
     # frame editing
 
@@ -506,7 +558,7 @@ class VideoPlayer(QMainWindow):
                 frame_number = int(frame_text)
                 self.playback_controller.jump_to_frame(frame_number)
         except (ValueError, TypeError):
-            print("Invalid frame number.")
+            lg.warning("Invalid frame number.")
         finally:
             self.frame_editing = False
             self.frame_input.setVisible(False)
@@ -541,15 +593,128 @@ class VideoPlayer(QMainWindow):
         if checked:
             if not self.csv_plot_win:
                 self.csv_plot_win = CSVPlotWindow(self)
-                self.csv_plot_win.move(self.x() + 20, self.y() + self.height() - 170)
             self.csv_plot_win.show()
         else:
             if self.csv_plot_win:
                 self.csv_plot_win.hide()
+        self._set_float_window_pos()
+    
+    def _set_float_window_pos(self):
+        if self.csv_plot_win and self.csv_plot_win.isVisible():
+            csv_pos = self.settings.value("csv_window/pos", QPoint(self.x() + 20, self.y() + self.height() - 170))
+            csv_size = self.settings.value("csv_window/size", self.csv_plot_win.size())
+            self.csv_plot_win.move(csv_pos)
+            self.csv_plot_win.resize(csv_size)
+        if self.marker_float and self.marker_float.isVisible():
+            marker_pos = self.settings.value("marker_float/pos", QPoint(self.x() - 50, self.y() + 50))
+            marker_size = self.settings.value("marker_float/size", self.marker_float.size())
+            self.marker_float.move(marker_pos)
+            self.marker_float.resize(marker_size)
+
+    def open_config_window(self):
+        """Opens the modal configuration dialog."""
+        if not self.config_win:
+            self.config_win = ConfigWindow(self)
+        
+        # The exec() call makes the dialog modal.
+        # It returns a result (Accepted or Rejected) when closed.
+        result = self.config_win.exec()
+
+        if result == QDialog.DialogCode.Accepted:
+            print("Configuration saved. Applying changes to main window...")
+            self.on_config_changed()
+        else:
+            print("Configuration changes cancelled.")
+        
+        # Since the dialog is closed, we can dereference it.
+        self.config_win = None
+
+    def open_csv_analysis(self):
+        """opens the CSV analysis window"""
+        if not hasattr(self, 'csv_analysis_win') or self.csv_analysis_win is None:
+            self.csv_analysis_win = CSVAnalysisWindow(self)
+        self.csv_analysis_win.show()
+        self.csv_analysis_win.raise_()
+
+    def on_config_changed(self):
+        """Updates the main window UI after config changes are saved."""
+        self.setWindowTitle(config.WINDOW_TITLE)
+        # self.key_handler.update_marker_keys() #TODO sth like this
+        self.markers_widget.update()
+        # You can add more UI updates here if needed, e.g., for toggling plots
+        self.marker_float_action.setChecked(config.MARKER_FLOAT_ENABLED)
+        self.toggle_marker_float(config.MARKER_FLOAT_ENABLED)
+
+        self.csv_plot_action.setChecked(config.CSV_PLOT_ENABLED)
+        self.toggle_csv_plot(config.CSV_PLOT_ENABLED)
+
+    def _rebuild_marker_scan(self):
+        items: list[tuple[int, str]] = []
+        for name, frames in self.event_manager.markers.items():
+            for f in frames:
+                items.append((int(f), str(name)))
+        items.sort(key=lambda t: t[0])
+        self._sorted_marker_events = items
+        self._sorted_marker_frames = [f for f, _ in items]
+        cur = self.playback_controller.get_current_frame()
+        self._scan_idx = bisect_right(self._sorted_marker_frames, cur)  # first > cur
+        self._last_frame = cur
+
+    def consume_passed_markers(self, current_frame: int):
+        # backward seek: just reposition pointer, no emit
+        if current_frame < self._last_frame:
+            self._scan_idx = bisect_right(self._sorted_marker_frames, current_frame)
+            self._last_frame = current_frame
+            return
+        # forward: emit every marker crossed since last frame
+        while self._scan_idx < len(self._sorted_marker_events) and self._sorted_marker_events[self._scan_idx][0] <= current_frame:
+            _, name = self._sorted_marker_events[self._scan_idx]
+            if self.marker_float:           # MarkerFloat wired via self.marker_signal
+                self.marker_signal.emit(name)
+            self._scan_idx += 1
+        self._last_frame = current_frame
+
+    def save_screenshot(self):
+        try:
+            shots = Path(__file__).resolve().parent / "shots" 
+            shots.mkdir(parents=True, exist_ok=True)
+
+            base = os.path.splitext(os.path.basename(self.fname or "untitled"))[0]
+            frame = self.playback_controller.get_current_frame()
+            out = shots / f"{base}_{frame:05d}.jpg"
+
+            # temporarily pause to ensure frame is ready
+            was_playing = self.media_player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+            if was_playing:
+                self.media_player.pause()
+
+            # get the video sink and current frame
+            video_sink = self.media_player.videoSink()
+            if video_sink:
+                current_frame = video_sink.videoFrame()
+                if current_frame.isValid():
+                    # convert video frame to QImage then save
+                    image = current_frame.toImage()
+                    if not image.isNull():
+                        ok = image.save(str(out), "JPG", quality=95)
+                        lg.info(f"{'Saved' if ok else 'Failed'} screenshot: {out}")
+                    else:
+                        lg.warning("Failed to convert video frame to image")
+                else:
+                    lg.warning("No valid video frame available")
+            else:
+                lg.warning("No video sink available")
+
+            # resume playback if it was playing
+            if was_playing:
+                self.media_player.play()
+
+        except Exception as e:
+            lg.error(f"Screenshot error: {e}")
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    player = VideoPlayer()
+    player = VideoPlayer(app=app)
     player.show()
     sys.exit(app.exec())

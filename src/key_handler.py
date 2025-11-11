@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING
-
+import os
+from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeyEvent
 
@@ -113,6 +114,9 @@ class KeyHandler:
         elif key == Qt.Key.Key_S and modifiers == Qt.KeyboardModifier.ControlModifier:
             self.window.save_event()
 
+        elif key == Qt.Key.Key_F12:
+            self.window.save_screenshot()
+
     def jump_to_adjacent_marker(self, forward: bool):
         all_frames = self.events.get_all_marker_frames()
         if not all_frames:
@@ -187,3 +191,8 @@ class KeyHandler:
         
         print(f"Nudged marker {target_mtype} from {current_frame} to {new_frame}")
         return True
+    
+    def _get_shots_dir(self) -> Path:
+        sd = Path(__file__).parent / 'shots'
+        sd.mkdir(exist_ok=True)
+        return sd

@@ -4,10 +4,9 @@ Singleton configuration manager for evtmkr
 
 import yaml
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
-
 
 class ConfigMeta(type):
     """Metaclass for singleton pattern"""
@@ -18,11 +17,10 @@ class ConfigMeta(type):
             cls._instances[cls] = super().__call__(*args, **kwargs)
         return cls._instances[cls]
 
-
 class Config(metaclass=ConfigMeta):
     """Configuration manager that loads from yaml file."""
     
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: str = None):
         # only initialize once
         if hasattr(self, '_initialized'):
             return
@@ -33,7 +31,7 @@ class Config(metaclass=ConfigMeta):
         self._cache = {}
         self.load_config()
     
-    def load_config(self, config_path: Optional[str] = None):
+    def load_config(self, config_path: str = None):
         """load configuration from yaml file"""
         if config_path:
             self._config_file = config_path
@@ -118,12 +116,12 @@ class Config(metaclass=ConfigMeta):
             float(k): v for k, v in comp.items()
         }
     
-    def reload(self, config_path: Optional[str] = None):
+    def reload(self, config_path: str = None):
         """reload configuration, useful for runtime changes"""
         self._cache.clear()
         self.load_config(config_path)
     
-    def save(self, config_path: Optional[str] = None):
+    def save(self, config_path: str = None):
         """save current configuration to yaml file"""
         save_path = config_path or self._config_file
         try:
