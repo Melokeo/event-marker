@@ -3,7 +3,8 @@ from PyQt6.QtGui import QPainter, QTransform
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 
 class QIVideoWidget(QVideoWidget):
-    """Video widget with zoom and pan functionality."""
+    """Video widget with zoom and pan functionality.
+    -- expected, but actually doesnt work"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.zoom_factor = 1.0
