@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QFrame, QScrollArea
 )
 
-from cfg import config
+from .cfg import config
 
 class ConfigWindow(QDialog):
     """A dialog window for editing application settings."""

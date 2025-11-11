@@ -1,5 +1,5 @@
 from PyQt6.QtMultimedia import QMediaPlayer
-from cfg import config
+from .cfg import config
 
 class PlaybackController:
     """Manages the QMediaPlayer state and playback controls."""

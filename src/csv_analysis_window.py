@@ -32,8 +32,8 @@ except ImportError:
     HAS_SCIPY = False
     print("Warning: scipy not available, some features will be limited")
 
-from cfg import config
-from ol_logging import set_colored_logger
+from .cfg import config
+from .ol_logging import set_colored_logger
 
 lg = set_colored_logger(__name__)
 
