@@ -12,7 +12,18 @@ from PyQt6.QtMultimedia import QMediaPlayer
 # Add src to path to import modules
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ..src.gui import VideoPlayer
+# add src to path to import modules
+src_path = Path(__file__).parent.parent / "src"
+sys.path.insert(0, str(src_path))
+
+# change to src directory so relative imports work
+original_dir = os.getcwd()
+os.chdir(src_path)
+
+from gui import VideoPlayer
+
+# change back to original directory
+os.chdir(original_dir)
 
 
 @pytest.fixture(scope="session")
