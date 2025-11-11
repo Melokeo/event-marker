@@ -77,6 +77,7 @@ class VideoPlayer(QMainWindow):
         self.media_player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.media_player.setAudioOutput(self.audio_output)
+        lg.debug(f"Audio initialized: volume={self.audio_output.volume()}, muted={self.audio_output.isMuted()}")
         
         # business logic controllers
         self.event_manager = EventManager()
