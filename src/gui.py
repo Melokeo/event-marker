@@ -91,7 +91,7 @@ class VideoPlayer(QMainWindow):
         self.frame_timer = QTimer()
         self.marker_float = None
         if config.MARKER_FLOAT_ENABLED:
-            self.marker_float = MarkerFloat()
+            self.marker_float = MarkerFloat(player=self)
         self.config_win = None
 
         self.is_slider_pressed = False
@@ -114,9 +114,11 @@ class VideoPlayer(QMainWindow):
         self.move(self.settings.value("window/pos", QPoint(100, 100)))
         
         # setup csv plot window if enabled
+        self.csv_plot_win = CSVPlotWindow(self)
         if config.CSV_PLOT_ENABLED:
-            self.csv_plot_win = CSVPlotWindow(self)
             self.csv_plot_win.show()
+        else:
+            self.csv_plot_win.hide()
         
         # show marker float if enabled
         if self.marker_float:
@@ -236,7 +238,7 @@ class VideoPlayer(QMainWindow):
         # toggle csv plot
         csv_plot_action = QAction("Show CSV Plot", self)
         csv_plot_action.setCheckable(True)
-        csv_plot_action.setChecked(config.CSV_PLOT_ENABLED and self.csv_plot_win is not None)
+        csv_plot_action.setChecked(config.CSV_PLOT_ENABLED)   # small problem here, this window is None at this point
         csv_plot_action.triggered.connect(self.toggle_csv_plot)
         workspace_menu.addAction(csv_plot_action)
         self.csv_plot_action = csv_plot_action
@@ -582,7 +584,7 @@ class VideoPlayer(QMainWindow):
     def toggle_marker_float(self, checked):
         if checked:
             if not self.marker_float:
-                self.marker_float = MarkerFloat()
+                self.marker_float = MarkerFloat(player=self)
                 self.marker_signal.connect(self.marker_float.receive_string)
             self.marker_float.show()
         else:

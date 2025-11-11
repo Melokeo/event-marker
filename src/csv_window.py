@@ -4,7 +4,7 @@ import csv
 import numpy as np
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtGui import QKeyEvent, QCloseEvent
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QComboBox, QFileDialog
@@ -98,3 +98,9 @@ class CSVPlotWindow(QWidget):
         if ev.xdata is None:
             return
         self.player.playback_controller.jump_to_frame(int(round(ev.xdata)))
+
+    def closeEvent(self, event: QCloseEvent):
+        """Update main window menu when CSV plot window is closed."""
+        if hasattr(self.player, 'csv_plot_action'):
+            self.player.csv_plot_action.setChecked(False)
+        super().closeEvent(event)

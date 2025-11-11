@@ -1,15 +1,17 @@
 from PyQt6.QtCore import (
     Qt, QTimer
 )
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QCloseEvent
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel
 )
 
 class MarkerFloat(QWidget):
     """a float window to display marker -- more obviously"""
-    def __init__(self, clear_interval: int = 2000): 
+    def __init__(self, player=None, clear_interval: int = 2000): 
         super().__init__()
+        if player is not None:
+            self.player = player
         self.clear_interval = clear_interval
         self.setup_ui()
         self.setup_timer()
@@ -50,3 +52,10 @@ class MarkerFloat(QWidget):
     def clear_display(self):
         """clear after timeout"""
         self.label.setText("-")
+    
+    def closeEvent(self, event: QCloseEvent):
+        """Update main window menu when marker float window is closed."""
+        if hasattr(self, 'player'):
+            if self.player and hasattr(self.player, 'marker_float_action'):
+                self.player.marker_float_action.setChecked(False)
+        super().closeEvent(event)
