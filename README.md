@@ -4,6 +4,12 @@ A qt-based video player for manual, frame level event marking.
 
 Was written after being tortured by OOM caused by previous matlab playback. 
 
+## Installation
+
+```
+pip install event-marker
+```
+
 ## Playback
 - `← →` steps `STEP` number of frames (default `STEP = 1 frame`);
 - `↑ ↓` steps more (`LARGE_STEP_MULTIPLIER*STEP`) of frames;
