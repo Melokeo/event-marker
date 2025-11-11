@@ -12,7 +12,7 @@ from PyQt6.QtMultimedia import QMediaPlayer
 # Add src to path to import modules
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from gui import VideoPlayer
+from ..src.gui import VideoPlayer
 
 
 @pytest.fixture(scope="session")
