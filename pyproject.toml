@@ -53,6 +53,7 @@ csv_analysis = [
 ]
 
 [project.scripts]
+evtmkr = "src.__main__:main"
 event-marker = "src.__main__:main"
 
 [project.urls]
