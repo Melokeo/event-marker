@@ -1,7 +1,7 @@
 import sys
 from PyQt6.QtWidgets import QApplication
 
-from gui import VideoPlayer
+from .gui import VideoPlayer
 
 def main():
     """Main entry point for the event-marker application."""
