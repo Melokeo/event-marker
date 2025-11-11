@@ -331,7 +331,7 @@ class VideoPlayer(QMainWindow):
 
     def closeEvent(self, event):
         self.media_player.stop()
-        lg.info("Recorded Events:", dict(self.event_manager.markers))
+        lg.info(f"Recorded Events: {dict(self.event_manager.markers)}")
         self.save_event()
         
         self.settings.setValue("window/size", self.size())
@@ -492,7 +492,7 @@ class VideoPlayer(QMainWindow):
 
         except Exception as e:
             lg.error(f'Error when saving events; please copy data manually!!\n{e}')
-            lg.error("Recorded Events:", dict(self.event_manager.markers))
+            lg.error(f"Recorded Events: {dict(self.event_manager.markers)}")
 
         try:
             # open file in system viewer
@@ -538,7 +538,7 @@ class VideoPlayer(QMainWindow):
 
             except Exception as e:
                 lg.warning(f'Error when saving events as new file; please copy data manually!!\n{e}')
-                lg.warning("Recorded Events:", dict(self.event_manager.markers))
+                lg.warning(f"Recorded Events: {dict(self.event_manager.markers)}")
 
     # frame editing
 
