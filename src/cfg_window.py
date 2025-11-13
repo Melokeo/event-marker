@@ -1,6 +1,10 @@
 import yaml
 import re
 from functools import partial
+import logging
+from copy import deepcopy
+
+lg = logging.getLogger(__name__)
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPalette
@@ -11,7 +15,10 @@ from PyQt6.QtWidgets import (
     QComboBox, QFrame, QScrollArea
 )
 
-from .cfg import config
+try:
+    from .cfg import config
+except ImportError:
+    from cfg import config
 
 class ConfigWindow(QDialog):
     """A dialog window for editing application settings."""
@@ -20,6 +27,9 @@ class ConfigWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Edit Configuration")
         self.setMinimumSize(550, 450)
+
+        # create a deep copy of config data to work with
+        self._config_copy = deepcopy(config._data)
 
         # main layout
         layout = QVBoxLayout(self)
@@ -254,25 +264,26 @@ class ConfigWindow(QDialog):
         self.tabs.addTab(tab, "Workspace")
 
     def load_settings(self):
-        """Populates the widgets with current values from the config."""
+        """Populates the widgets with current values from the config copy."""
         # clear existing dynamic rows first
         while self.marker_rows_layout.rowCount() > 0:
             self.remove_marker_row(self.get_marker_row_widgets()[0])
 
         # ui
-        self.ui_window_title.setText(config.get('ui.window_title', ''))
-        self.ui_marker_float_enabled.setChecked(config.get('ui.marker_float_enabled', False))
-        self.ui_csv_plot_enabled.setChecked(config.get('ui.csv_plot_enabled', False))
+        self.ui_window_title.setText(self._config_copy.get('ui', {}).get('window_title', ''))
+        self.ui_marker_float_enabled.setChecked(self._config_copy.get('ui', {}).get('marker_float_enabled', False))
+        self.ui_csv_plot_enabled.setChecked(self._config_copy.get('ui', {}).get('csv_plot_enabled', False))
 
         # playback
-        self.pb_fps.setValue(config.get('playback.fps', 30.0))
-        self.pb_video_fps_original.setValue(config.get('playback.video_fps_original', 119.88))
-        self.pb_large_step_multiplier.setValue(config.get('playback.large_step_multiplier', 6))
-        self.pb_frame_step.setValue(config.get('playback.frame_step', 1))
+        self.pb_fps.setValue(self._config_copy.get('playback', {}).get('fps', 30.0))
+        self.pb_video_fps_original.setValue(self._config_copy.get('playback', {}).get('video_fps_original', 119.88))
+        self.pb_large_step_multiplier.setValue(self._config_copy.get('playback', {}).get('large_step_multiplier', 6))
+        self.pb_frame_step.setValue(self._config_copy.get('playback', {}).get('frame_step', 1))
 
         # markers
-        keys = config.get('marker.keys', [])
-        colors = config.MARKER_COLORS
+        keys = self._config_copy.get('marker', {}).get('keys', [])
+        colors_raw = self._config_copy.get('marker', {}).get('colors', [])
+        colors = [QColor(*rgb) for rgb in colors_raw]
         for i, key_name in enumerate(keys):
             color = colors[i] if i < len(colors) else None
             self.add_marker_row(key_name, color, update_ui=False) # add rows without updating UI each time
@@ -280,8 +291,8 @@ class ConfigWindow(QDialog):
         self.refresh_marker_ui() # update all labels and pairing options once
 
         # pairing
-        self.marker_pairing_enabled.setChecked(config.get('marker.pairing.enabled', False))
-        rules = config.get('marker.pairing.rules', {})
+        self.marker_pairing_enabled.setChecked(self._config_copy.get('marker', {}).get('pairing', {}).get('enabled', False))
+        rules = self._config_copy.get('marker', {}).get('pairing', {}).get('rules', {})
         
         # translate index-based rules from config to key-based UI
         key_names = [row.findChild(QComboBox).currentText() for row in self.get_marker_row_widgets()]
@@ -297,22 +308,24 @@ class ConfigWindow(QDialog):
                     combo.setCurrentText(paired_key_name)
 
         # workspace
-        self.ws_auto_search.setChecked(config.get('workspace.auto_search_events', False))
-        self.ws_default_path.setText(config.get('workspace.default_path', ''))
+        self.ws_auto_search.setChecked(self._config_copy.get('workspace', {}).get('auto_search_events', False))
+        self.ws_default_path.setText(self._config_copy.get('workspace', {}).get('default_path', ''))
 
     def apply_changes(self):
-        """Reads values from widgets and updates the config object."""
+        """Reads values from widgets, updates the actual config object, and saves."""
+        lg.debug('cfg window: apply cfg changes')
         try:
+            # read all values from widgets into the config copy
             # ui
-            config.set('ui.window_title', self.ui_window_title.text())
-            config.set('ui.marker_float_enabled', self.ui_marker_float_enabled.isChecked())
-            config.set('ui.csv_plot_enabled', self.ui_csv_plot_enabled.isChecked())
+            self._config_copy.setdefault('ui', {})['window_title'] = self.ui_window_title.text()
+            self._config_copy['ui']['marker_float_enabled'] = self.ui_marker_float_enabled.isChecked()
+            self._config_copy['ui']['csv_plot_enabled'] = self.ui_csv_plot_enabled.isChecked()
 
             # playback
-            config.set('playback.fps', self.pb_fps.value())
-            config.set('playback.video_fps_original', self.pb_video_fps_original.value())
-            config.set('playback.large_step_multiplier', self.pb_large_step_multiplier.value())
-            config.set('playback.frame_step', self.pb_frame_step.value())
+            self._config_copy.setdefault('playback', {})['fps'] = self.pb_fps.value()
+            self._config_copy['playback']['video_fps_original'] = self.pb_video_fps_original.value()
+            self._config_copy['playback']['large_step_multiplier'] = self.pb_large_step_multiplier.value()
+            self._config_copy['playback']['frame_step'] = self.pb_frame_step.value()
 
             # markers - keys and colors
             row_widgets = self.get_marker_row_widgets()
@@ -323,11 +336,11 @@ class ConfigWindow(QDialog):
                 color = color_btn.palette().color(QPalette.ColorRole.Button)
                 colors.append([color.red(), color.green(), color.blue()])
             
-            config.set('marker.keys', keys)
-            config.set('marker.colors', colors)
+            self._config_copy.setdefault('marker', {})['keys'] = keys
+            self._config_copy['marker']['colors'] = colors
 
             # markers - pairing (translate key-based UI to index-based config)
-            config.set('marker.pairing.enabled', self.marker_pairing_enabled.isChecked())
+            self._config_copy['marker'].setdefault('pairing', {})['enabled'] = self.marker_pairing_enabled.isChecked()
             key_to_index = {key: str(i + 1) for i, key in enumerate(keys)}
             new_rules = {}
             pairing_combos = self.pairing_widget.findChildren(QComboBox)
@@ -339,14 +352,18 @@ class ConfigWindow(QDialog):
                     paired_marker_index_str = key_to_index.get(selected_key)
                     if paired_marker_index_str:
                         new_rules[current_marker_index_str] = paired_marker_index_str
-            config.set('marker.pairing.rules', new_rules)
+            self._config_copy['marker']['pairing']['rules'] = new_rules
 
             # workspace
-            config.set('workspace.auto_search_events', self.ws_auto_search.isChecked())
-            config.set('workspace.default_path', self.ws_default_path.text())
+            self._config_copy.setdefault('workspace', {})['auto_search_events'] = self.ws_auto_search.isChecked()
+            self._config_copy['workspace']['default_path'] = self.ws_default_path.text()
 
-            # reload config to process changes
+            # now apply the copy to the actual config
+            config._data = deepcopy(self._config_copy)
+            config.save()
             config.reload()
+            
+            lg.debug('Changes applied w/o error')
             return True
 
         except Exception as e:
@@ -394,3 +411,75 @@ class ConfigWindow(QDialog):
         )
         if directory:
             self.ws_default_path.setText(directory)
+
+
+if __name__ == "__main__":
+    """
+    Standalone mode for debugging the config window.
+    Run with: python src/cfg_window.py
+    
+    This allows testing the config UI without launching the main app.
+    Changes are written to the actual evt-config.yaml file.
+    """
+    import sys
+    from pathlib import Path
+    from PyQt6.QtWidgets import QApplication
+
+    lg.setLevel(logging.DEBUG)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    ch.setFormatter(formatter)
+    lg.addHandler(ch)
+    
+    print("="*60)
+    print("Event Marker - Standalone Configuration Editor")
+    print("="*60)
+    print(f"\nLoaded config from: {config._config_file}")
+    print(f"Config location: {Path(config._config_file).absolute()}")
+    print("\nCurrent settings:")
+    print(f"  Markers: {len(config.MARKER_KEYS)} configured")
+    print(f"  Window Title: {config.WINDOW_TITLE}")
+    print(f"  Marker Float: {config.MARKER_FLOAT_ENABLED}")
+    print(f"  CSV Plot: {config.CSV_PLOT_ENABLED}")
+    print(f"  Playback FPS: {config.PLAYBACK_FPS}")
+    print(f"  Video FPS: {config.VIDEO_FPS_ORIGINAL}")
+    print("="*60 + "\n")
+    
+    app = QApplication(sys.argv)
+    
+    # Create config window
+    window = ConfigWindow()
+    window.setWindowTitle("Event Marker - Configuration (Debug Mode)")
+    
+    # Show as non-modal window
+    window.setWindowModality(Qt.WindowModality.NonModal)
+    window.show()
+    
+    # Run event loop
+    result = app.exec()
+    
+    # Print results
+    print("\n" + "="*60)
+
+    if window.result() == QDialog.DialogCode.Accepted:
+        print("✓ Configuration SAVED to evt-config.yaml")
+        print("="*60)
+        print("\nUpdated settings:")
+        print(f"  Markers: {len(config.MARKER_KEYS)} configured")
+        print(f"  Marker Keys: {config.MARKER_KEYS}")
+        print(f"  Window Title: {config.WINDOW_TITLE}")
+        print(f"  Marker Float: {config.MARKER_FLOAT_ENABLED}")
+        print(f"  CSV Plot: {config.CSV_PLOT_ENABLED}")
+        print(f"  Playback FPS: {config.PLAYBACK_FPS}")
+        print(f"  Video FPS: {config.VIDEO_FPS_ORIGINAL}")
+        print(f"  Large Step: {config.LARGE_STEP_MULTIPLIER}")
+        print(f"  Frame Step: {config.FRAME_STEP}")
+        print(f"  Auto Search: {config.AUTO_SEARCH_EVENTS}")
+        print(f"  Default Path: {config.DEFAULT_WORK_PATH}")
+        print(f"\n  Config file: {Path(config._config_file).absolute()}")
+    else:
+        print("Configuration CANCELLED - No changes saved")
+    print("="*60 + "\n")
+    
+    sys.exit(result)

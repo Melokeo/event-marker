@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
+import logging
+
+lg = logging.getLogger(__name__)
 
 class ConfigMeta(type):
     """Metaclass for singleton pattern"""
@@ -124,21 +127,27 @@ class Config(metaclass=ConfigMeta):
     def save(self, config_path: str = None):
         """save current configuration to yaml file"""
         save_path = config_path or self._config_file
+        
+        # resolve to absolute path if needed
+        if not Path(save_path).is_absolute():
+            # try to use the same location where config was loaded from
+            if Path(self._config_file).is_absolute():
+                save_path = self._config_file
+            else:
+                save_path = Path(__file__).parent / save_path
+
+        lg.debug(f"Saving config to {save_path}")
+        print(f'{save_path=}')
+        
         try:
-            # convert QColor back to lists for saving
-            save_data = self._data.copy()
-            if 'marker' in save_data and 'colors' not in save_data['marker']:
-                # if colors were modified at runtime
-                save_data['marker']['colors'] = [
-                    [c.red(), c.green(), c.blue()] 
-                    for c in self._cache.get('marker_colors', [])
-                ]
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             
+            # save the current _data (which has been modified by set())
             with open(save_path, 'w', encoding='utf-8') as f:
-                yaml.dump(save_data, f, default_flow_style=False, sort_keys=False)
-            print(f"Saved config to {save_path}")
+                yaml.dump(self._data, f, default_flow_style=False, sort_keys=False)
+            lg.info(f"Saved config to {save_path}")
         except Exception as e:
-            print(f"Error saving config: {e}")
+            lg.error(f"Error saving config: {e}")
     
     # property accessors
     @property
