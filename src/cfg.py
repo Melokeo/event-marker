@@ -21,15 +21,19 @@ class ConfigMeta(type):
         return cls._instances[cls]
 
 class Config(metaclass=ConfigMeta):
-    """Configuration manager that loads from yaml file."""
+    """
+    Configuration manager that loads from yaml file.
+    By default, expects 'evt-config.yaml' in the same dir as this script.
+    """
     
-    def __init__(self, config_path: str = None):
+    def __init__(self, config_path: str | None = None):
         # only initialize once
         if hasattr(self, '_initialized'):
             return
         self._initialized = True
         
-        self._config_file = config_path or "evt-config.yaml"
+        curr_path = Path(__file__).parent
+        self._config_file = config_path or curr_path / "evt-config.yaml"
         self._data = {}
         self._cache = {}
         self.load_config()
