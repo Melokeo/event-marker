@@ -9,11 +9,7 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtMultimedia import QMediaPlayer
 
-parent_path = Path(__file__).parent.parent
-if str(parent_path) not in sys.path:
-    sys.path.insert(0, str(parent_path))
-
-from src.gui import VideoPlayer
+from evtmkr.gui import VideoPlayer
 
 @pytest.fixture(scope="session")
 def qapp():
