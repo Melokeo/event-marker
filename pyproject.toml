@@ -53,8 +53,8 @@ csv_analysis = [
 ]
 
 [project.scripts]
-evtmkr = "src.__main__:main"
-event-marker = "src.__main__:main"
+evtmkr = "src.evtmkr.__main__:main"
+event-marker = "src.evtmkr.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/Melokeo/event-marker"
@@ -63,7 +63,7 @@ Issues = "https://github.com/Melokeo/event-marker/issues"
 
 [tool.setuptools]
 package-dir = {"" = "."}
-packages = ["src"]
+packages = ["src.evtmkr"]
 
 [tool.setuptools.package-data]
 src = ["*.yaml"]

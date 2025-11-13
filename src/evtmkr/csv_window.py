@@ -14,7 +14,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 if TYPE_CHECKING:
-    from .gui import VideoPlayer
+    from evtmkr.gui import VideoPlayer
 
 class CSVPlotWindow(QWidget):
     def __init__(self, player):

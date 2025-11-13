@@ -49,17 +49,17 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QVideoFrame
 
-from .marker_float import MarkerFloat
-from .event_manager import EventManager
-from .key_handler import KeyHandler
-from .cfg import config
-from .playback_controller import PlaybackController
-from .csv_window import CSVPlotWindow
-from .csv_analysis_window import CSVAnalysisWindow
-from .qivideo_widget import QIVideoWidget
-from .markers_widget import MarkersWidget
-from .cfg_window import ConfigWindow
-from .ol_logging import set_colored_logger
+from evtmkr.marker_float import MarkerFloat
+from evtmkr.event_manager import EventManager
+from evtmkr.key_handler import KeyHandler
+from evtmkr.cfg import config
+from evtmkr.playback_controller import PlaybackController
+from evtmkr.csv_window import CSVPlotWindow
+from evtmkr.csv_analysis_window import CSVAnalysisWindow
+from evtmkr.qivideo_widget import QIVideoWidget
+from evtmkr.markers_widget import MarkersWidget
+from evtmkr.cfg_window import ConfigWindow
+from evtmkr.ol_logging import set_colored_logger
 
 lg = set_colored_logger(__name__)
 lg.setLevel(logging.DEBUG)

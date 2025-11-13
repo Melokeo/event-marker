@@ -4,7 +4,7 @@ from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeyEvent
 
-from .cfg import config
+from evtmkr.cfg import config
 
 if TYPE_CHECKING:
     from gui import VideoPlayer
